@@ -11,6 +11,10 @@ import { parseVoiceFormula } from "./voiceFormula";
 
 const MODEL_CONTEXT_WINDOW = 512;
 const SAMPLE_RATE = 24000; // sample rate in Hz
+// Approximate training range for the model's native speed input.
+// Values outside this are handled via FFmpeg post-processing.
+const MODEL_SPEED_MIN = 0.5;
+const MODEL_SPEED_MAX = 2.0;
 
 /**
  * Generates a voice from a given text.
@@ -67,8 +71,16 @@ export async function generateVoice(params: {
   const waveforms: Float32Array[] = [];
   let waveformsLen = 0;
 
+  // Track speed overrides from inline [speed:X] / [fast] / [slow] markers.
+  let speedOverride: number | null = null;
+
   // Process each chunk based on its type.
   for (const chunk of chunks) {
+    if (chunk.type === "speed") {
+      speedOverride = chunk.multiplier;
+      continue;
+    }
+
     if (chunk.type === "silence") {
       console.log(chunk);
 
@@ -95,9 +107,18 @@ export async function generateVoice(params: {
         paddedTokens.length,
       ]);
       const style = new ort.Tensor("float32", ref_s, [1, ref_s.length]);
-      // Fixed speed because speed should be implemented as post-processing
-      // instead of being a model input to get better results.
-      const speed = new ort.Tensor("float32", [1], [1]);
+
+      // Use the model's native speed input for natural prosody. Per-chunk
+      // multipliers (from sentence type or inline markers) are applied here.
+      // Values outside the model's training range are clamped; any remaining
+      // factor is applied via FFmpeg after assembly.
+      const chunkMultiplier = speedOverride ?? (chunk.speed ?? 1.0);
+      const effectiveSpeed = params.speed * chunkMultiplier;
+      const modelSpeed = Math.max(
+        MODEL_SPEED_MIN,
+        Math.min(MODEL_SPEED_MAX, effectiveSpeed),
+      );
+      const speed = new ort.Tensor("float32", [modelSpeed], [1]);
 
       // Get the raw waveform and trim extra silence duration.
       const result = await session.run({ input_ids, style, speed });
@@ -121,8 +142,15 @@ export async function generateVoice(params: {
   }
 
   let wavBuffer = await createWavBuffer(finalWaveform, SAMPLE_RATE);
-  if (params.speed !== 1) {
-    wavBuffer = await modifyWavSpeed(wavBuffer, params.speed);
+  // Apply FFmpeg only if the global speed falls outside the model's training range,
+  // to handle the overflow factor beyond what the model can express natively.
+  const clampedGlobalSpeed = Math.max(
+    MODEL_SPEED_MIN,
+    Math.min(MODEL_SPEED_MAX, params.speed),
+  );
+  const ffmpegFactor = params.speed / clampedGlobalSpeed;
+  if (Math.abs(ffmpegFactor - 1) > 0.01) {
+    wavBuffer = await modifyWavSpeed(wavBuffer, ffmpegFactor);
   }
 
   if (params.format === "wav") {

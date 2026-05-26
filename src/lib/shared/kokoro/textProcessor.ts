@@ -6,6 +6,8 @@ export interface TextChunk {
   type: "text";
   content: string;
   tokens: number[];
+  /** Per-chunk speed multiplier derived from trailing punctuation. Default: 1.0. */
+  speed?: number;
 }
 
 export interface SilenceChunk {
@@ -13,19 +15,37 @@ export interface SilenceChunk {
   durationSeconds: number;
 }
 
-export type TextProcessorChunk = TextChunk | SilenceChunk;
+export interface SpeedChunk {
+  type: "speed";
+  /** Absolute speed multiplier applied to all subsequent text chunks until reset. */
+  multiplier: number;
+}
+
+export type TextProcessorChunk = TextChunk | SilenceChunk | SpeedChunk;
 
 /**
  * Replace punctuation and newlines with silence markers.
+ *
+ * Ordering matters: longer/more-specific patterns must precede shorter ones
+ * (e.g. paragraph breaks before single newlines, ellipsis before single dots).
  */
 export function sanitizeText(rawText: string): string {
   const sanitizedText = rawText
-    .replace(/\.\s+/g, "[0.4s]") // Dot followed by whitespace(s).
-    .replace(/,\s+/g, "[0.2s]") // Comma followed by whitespace(s).
-    .replace(/;\s+/g, "[0.4s]") // Semicolon followed by whitespace(s).
-    .replace(/:\s+/g, "[0.3s]") // Colon followed by whitespace(s).
-    .replace(/!\s+/g, "![0.1s]") // Exclamation mark followed by whitespace(s).
-    .replace(/\?\s+/g, "?[0.1s]") // Question mark followed by whitespace(s).
+    // Paragraph break (2+ newlines) — must come before the single-newline rule.
+    .replace(/\n{2,}/g, "[0.8s]")
+    // Ellipsis variants — must come before the single-dot rule.
+    .replace(/\.{3,}/g, "[0.6s]")
+    .replace(/…/g, "[0.6s]")
+    // Em-dash — no whitespace requirement (often appears as word—word).
+    .replace(/—/g, "[0.5s]")
+    // Standard punctuation.
+    .replace(/\.\s+/g, "[0.4s]")
+    .replace(/,\s+/g, "[0.2s]")
+    .replace(/;\s+/g, "[0.4s]")
+    .replace(/:\s+/g, "[0.3s]")
+    .replace(/!\s+/g, "![0.3s]")
+    .replace(/\?\s+/g, "?[0.3s]")
+    // Single newline — after the paragraph-break rule.
     .replace(/\n+/g, "[0.4s]")
     .trim();
 
@@ -34,10 +54,11 @@ export function sanitizeText(rawText: string): string {
 }
 
 /**
- * Splits the sanitized string into segments using silence markers as delimiters.
+ * Splits the sanitized string into segments using silence and speed markers as delimiters.
  */
 export function segmentText(sanitizedText: string): string[] {
-  const regex = /(\[[0-9]+(?:\.[0-9]+)?s\])/g;
+  const regex =
+    /(\[[0-9]+(?:\.[0-9]+)?s\]|\[speed:[0-9]*\.?[0-9]+\]|\[fast\]|\[slow\])/g;
   return sanitizedText
     .split(regex)
     .map((s) => s.trim())
@@ -72,6 +93,39 @@ function createPhonemeSubChunks(
 }
 
 /**
+ * Returns a speed multiplier (relative to the user's base speed) based on the
+ * trailing punctuation of a sentence. Exclamatory sentences run slightly faster;
+ * questions run slightly slower — matching natural speech patterns.
+ */
+function getSentenceSpeedMultiplier(segment: string): number {
+  const t = segment.trimEnd();
+  if (t.endsWith("!")) return 1.05;
+  if (t.endsWith("?")) return 0.95;
+  return 1.0;
+}
+
+/**
+ * Returns true when a segment is a user-authored speed marker:
+ * [speed:X], [fast], or [slow].
+ */
+export function isSpeedMarker(segment: string): boolean {
+  const s = segment.trim();
+  return /^\[speed:[0-9]*\.?[0-9]+\]$/.test(s) || s === "[fast]" || s === "[slow]";
+}
+
+/**
+ * Extracts the speed multiplier from a speed marker.
+ */
+export function extractSpeedMultiplier(marker: string): number {
+  const s = marker.trim();
+  const m = s.match(/^\[speed:([0-9]*\.?[0-9]+)\]$/);
+  if (m) return Math.max(0.1, parseFloat(m[1]));
+  if (s === "[fast]") return 1.3;
+  if (s === "[slow]") return 0.75;
+  return 1.0;
+}
+
+/**
  * Main preprocessText function:
  * 1. Sanitizes the input text.
  * 2. Segments the sanitized text into parts (text and silence markers).
@@ -99,12 +153,19 @@ export async function preprocessText(
       continue;
     }
 
+    if (isSpeedMarker(segment)) {
+      const multiplier = extractSpeedMultiplier(segment);
+      chunks.push({ type: "speed", multiplier });
+      continue;
+    }
+
+    const speed = getSentenceSpeedMultiplier(segment);
     const phonemized = await phonemize(segment, lang);
     const phonemizedChunks = createPhonemeSubChunks(phonemized, tokensPerChunk);
 
     for (const phonemeChunk of phonemizedChunks) {
       const tokens = tokenize(phonemeChunk);
-      chunks.push({ type: "text", content: phonemeChunk, tokens });
+      chunks.push({ type: "text", content: phonemeChunk, tokens, speed });
     }
   }
 
