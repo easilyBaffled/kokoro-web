@@ -5,7 +5,7 @@ import { combineVoices } from "./combineVoices";
 import { preprocessText, type TextProcessorChunk } from "./textProcessor";
 import { trimWaveform } from "./trimWaveform";
 import { getOnnxRuntime } from "./getOnnxRuntime";
-import { modifyWavSpeed, wavToMp3 } from "../ffmpeg";
+import { modifyWavSpeed, shiftPitch, wavToMp3 } from "../ffmpeg";
 import { createWavBuffer } from "./createWavBuffer";
 import { parseVoiceFormula } from "./voiceFormula";
 
@@ -67,12 +67,17 @@ export async function generateVoice(params: {
   format: "wav" | "mp3";
   acceleration: "cpu" | "webgpu";
   prosodyPreset?: ProsodyPresetId;
+  pitchShift?: number;
 }): Promise<{ buffer: ArrayBuffer; mimeType: string }> {
   if (params.acceleration === "webgpu" && !detectWebGPU()) {
     throw new Error("WebGPU is not supported in this environment");
   }
   if (params.speed < 0.1 || params.speed > 5) {
     throw new Error("Speed must be between 0.1 and 5");
+  }
+  const pitchSemitones = params.pitchShift ?? 0;
+  if (pitchSemitones < -6 || pitchSemitones > 6) {
+    throw new Error("Pitch shift must be between -6 and 6 semitones");
   }
 
   const ort = await getOnnxRuntime();
@@ -185,6 +190,9 @@ export async function generateVoice(params: {
   }
 
   let wavBuffer = await createWavBuffer(finalWaveform, SAMPLE_RATE);
+  if (pitchSemitones !== 0) {
+    wavBuffer = await shiftPitch(wavBuffer, pitchSemitones);
+  }
   // Apply FFmpeg only if the global speed falls outside the model's training range,
   // to handle the overflow factor beyond what the model can express natively.
   const clampedGlobalSpeed = Math.max(

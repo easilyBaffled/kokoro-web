@@ -107,6 +107,16 @@
       step="0.1"
     />
 
+    <RangeControl
+      bind:value={profile.pitchShift}
+      hideValue={true}
+      title={`Pitch ${profile.pitchShift > 0 ? "+" : ""}${profile.pitchShift} semitones`}
+      inputClass="w-full max-w-[400px]"
+      min="-3"
+      max="3"
+      step="1"
+    />
+
     <SelectControl
       bind:value={profile.prosodyPreset}
       title="Style"

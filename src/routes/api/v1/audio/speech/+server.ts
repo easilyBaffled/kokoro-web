@@ -144,6 +144,7 @@ const schema = zod.object({
     .enum(prosodyPresetIds as [ProsodyPresetId, ...ProsodyPresetId[]])
     .default("expressive")
     .optional(),
+  pitch_shift: zod.number().min(-6).max(6).default(0).optional(),
 });
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -162,7 +163,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
   }
 
-  const { model, input, voice, speed, response_format, prosody_preset } =
+  const { model, input, voice, speed, response_format, prosody_preset, pitch_shift } =
     parsed.data;
 
   // Find the language of the first voice of the formula
@@ -181,6 +182,7 @@ export const POST: RequestHandler = async ({ request }) => {
       format: response_format ?? "mp3",
       acceleration: "cpu",
       prosodyPreset: prosody_preset,
+      pitchShift: pitch_shift,
     });
 
     return new Response(result.buffer, {
