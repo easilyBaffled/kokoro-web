@@ -93,14 +93,29 @@ function createPhonemeSubChunks(
 }
 
 /**
+ * Scales all `[Xs]` silence markers in an already-sanitized string by a multiplier.
+ * Used to implement prosody presets without touching the base silence values.
+ */
+export function scaleSilences(text: string, multiplier: number): string {
+  if (multiplier === 1.0) return text;
+  return text.replace(/\[([0-9]+(?:\.[0-9]+)?)s\]/g, (_, d) => {
+    const scaled = Math.round(parseFloat(d) * multiplier * 100) / 100;
+    return `[${scaled}s]`;
+  });
+}
+
+/**
  * Returns a speed multiplier (relative to the user's base speed) based on the
  * trailing punctuation of a sentence. Exclamatory sentences run slightly faster;
  * questions run slightly slower — matching natural speech patterns.
+ *
+ * `variation` controls the magnitude of the effect (0 = no variation).
  */
-function getSentenceSpeedMultiplier(segment: string): number {
+function getSentenceSpeedMultiplier(segment: string, variation = 0.05): number {
+  if (variation === 0) return 1.0;
   const t = segment.trimEnd();
-  if (t.endsWith("!")) return 1.05;
-  if (t.endsWith("?")) return 0.95;
+  if (t.endsWith("!")) return 1.0 + variation;
+  if (t.endsWith("?")) return 1.0 - variation;
   return 1.0;
 }
 
@@ -128,22 +143,28 @@ export function extractSpeedMultiplier(marker: string): number {
 /**
  * Main preprocessText function:
  * 1. Sanitizes the input text.
- * 2. Segments the sanitized text into parts (text and silence markers).
- * 3. For non-silence segments, tokenizes them.
- * 4. Enforces the token limit on each tokenized segment.
+ * 2. Applies prosody scaling (silence multiplier from preset).
+ * 3. Segments the sanitized text into parts (text and silence markers).
+ * 4. For non-silence segments, phonemizes and tokenizes them.
+ * 5. Enforces the token limit on each tokenized segment.
  *
  * @param text - Original input text.
  * @param lang - Language for phonemization.
  * @param tokensPerChunk - Maximum allowed tokens per segment.
+ * @param prosodyOptions - Optional preset overrides for silence and speed variation.
  * @returns Array of TextProcessorChunk.
  */
 export async function preprocessText(
   text: string,
   lang: LangId | string,
   tokensPerChunk: number,
+  prosodyOptions?: { silenceMultiplier?: number; sentenceVariation?: number },
 ): Promise<TextProcessorChunk[]> {
+  const { silenceMultiplier = 1.0, sentenceVariation = 0.05 } =
+    prosodyOptions ?? {};
+
   const chunks: TextProcessorChunk[] = [];
-  const sanitized = sanitizeText(text);
+  const sanitized = scaleSilences(sanitizeText(text), silenceMultiplier);
   const segments = segmentText(sanitized);
 
   for (const segment of segments) {
@@ -159,7 +180,7 @@ export async function preprocessText(
       continue;
     }
 
-    const speed = getSentenceSpeedMultiplier(segment);
+    const speed = getSentenceSpeedMultiplier(segment, sentenceVariation);
     const phonemized = await phonemize(segment, lang);
     const phonemizedChunks = createPhonemeSubChunks(phonemized, tokensPerChunk);
 

@@ -6,6 +6,7 @@ import {
   voicesMap,
   type LangId,
   type ModelId,
+  type ProsodyPresetId,
 } from "$lib/shared/resources";
 
 export interface ProfileData {
@@ -21,6 +22,7 @@ export interface ProfileData {
   executionPlace: "browser" | "api";
   apiBaseUrl: string;
   apiKey: string;
+  prosodyPreset: ProsodyPresetId;
 }
 
 function getCurrentHost() {
@@ -41,6 +43,7 @@ export const defaultProfile: ProfileData = {
   executionPlace: "browser",
   apiBaseUrl: `${getCurrentHost()}/api/v1`,
   apiKey: "",
+  prosodyPreset: "expressive",
 };
 
 export const profile: ProfileData = $state({

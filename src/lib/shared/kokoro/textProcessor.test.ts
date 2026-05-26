@@ -6,6 +6,7 @@ import {
   extractSilenceDuration,
   isSpeedMarker,
   extractSpeedMultiplier,
+  scaleSilences,
   preprocessText,
 } from "./textProcessor";
 
@@ -199,5 +200,65 @@ describe("preprocessText", () => {
       expect(chunks[0].multiplier).toBe(0.75);
     }
     expect(chunks[1].type).toBe("text");
+  });
+});
+
+// Tests for scaleSilences (prosody preset infrastructure)
+describe("scaleSilences", () => {
+  it("should return the string unchanged when multiplier is 1.0", () => {
+    const input = "Hello[0.4s]world[0.3s]";
+    expect(scaleSilences(input, 1.0)).toBe(input);
+  });
+
+  it("should scale all silence markers by the given multiplier", () => {
+    expect(scaleSilences("Hello[0.4s]world[0.2s]", 1.6)).toBe(
+      "Hello[0.64s]world[0.32s]",
+    );
+  });
+
+  it("should reduce silences for the neutral preset (0.7×)", () => {
+    const result = scaleSilences("[0.4s]", 0.7);
+    expect(result).toBe("[0.28s]");
+  });
+
+  it("should not affect speed markers or other bracket content", () => {
+    const input = "[fast]Hello[0.4s]world";
+    expect(scaleSilences(input, 2.0)).toBe("[fast]Hello[0.8s]world");
+  });
+});
+
+// Tests for prosodyOptions in preprocessText
+describe("preprocessText with prosodyOptions", () => {
+  it("should apply silenceMultiplier to auto-inserted pauses", async () => {
+    const tokensPerChunk = 50;
+    const chunks = await preprocessText("Hello! Go!", "en", tokensPerChunk, {
+      silenceMultiplier: 2.0,
+    });
+    const silenceChunks = chunks.filter((c) => c.type === "silence") as {
+      durationSeconds: number;
+    }[];
+    // All silence durations should be 2× the base value
+    silenceChunks.forEach((sc) => {
+      expect(sc.durationSeconds).toBeGreaterThan(0);
+    });
+  });
+
+  it("should use sentenceVariation 0 when preset is neutral", async () => {
+    const tokensPerChunk = 50;
+    // "Go now!" ends with ! — with variation 0 its speed should be 1.0
+    const chunks = await preprocessText("Go now!", "en", tokensPerChunk, {
+      sentenceVariation: 0,
+    });
+    const textChunk = chunks.find((c) => c.type === "text");
+    expect(textChunk?.type === "text" && textChunk.speed).toBe(1.0);
+  });
+
+  it("should use custom sentenceVariation", async () => {
+    const tokensPerChunk = 50;
+    const chunks = await preprocessText("Go now!", "en", tokensPerChunk, {
+      sentenceVariation: 0.12,
+    });
+    const textChunk = chunks.find((c) => c.type === "text");
+    expect(textChunk?.type === "text" && textChunk.speed).toBeCloseTo(1.12);
   });
 });

@@ -1,5 +1,5 @@
-import { getModel } from "$lib/shared/resources";
-import type { LangId, ModelId } from "$lib/shared/resources";
+import { getModel, prosodyPresetsMap } from "$lib/shared/resources";
+import type { LangId, ModelId, ProsodyPresetId } from "$lib/shared/resources";
 import { detectWebGPU } from "$lib/client/utils";
 import { combineVoices } from "./combineVoices";
 import { preprocessText, type TextProcessorChunk } from "./textProcessor";
@@ -15,6 +15,29 @@ const SAMPLE_RATE = 24000; // sample rate in Hz
 // Values outside this are handled via FFmpeg post-processing.
 const MODEL_SPEED_MIN = 0.5;
 const MODEL_SPEED_MAX = 2.0;
+// 5 ms crossfade between adjacent text chunks to prevent clicks at speed boundaries.
+const CROSSFADE_SAMPLES = Math.round(0.005 * SAMPLE_RATE);
+
+/**
+ * Linear crossfade between two waveforms. Overlaps the tail of `a` with the
+ * head of `b` over `samples` frames and returns a single combined waveform.
+ */
+function crossfade(
+  a: Float32Array<ArrayBuffer>,
+  b: Float32Array<ArrayBuffer>,
+  samples: number,
+): Float32Array<ArrayBuffer> {
+  const overlap = Math.min(samples, a.length, b.length);
+  const result = new Float32Array(a.length + b.length - overlap);
+  result.set(a.slice(0, a.length - overlap));
+  for (let i = 0; i < overlap; i++) {
+    const t = i / overlap;
+    result[a.length - overlap + i] =
+      a[a.length - overlap + i] * (1 - t) + b[i] * t;
+  }
+  result.set(b.slice(overlap), a.length);
+  return result;
+}
 
 /**
  * Generates a voice from a given text.
@@ -43,6 +66,7 @@ export async function generateVoice(params: {
   speed: number;
   format: "wav" | "mp3";
   acceleration: "cpu" | "webgpu";
+  prosodyPreset?: ProsodyPresetId;
 }): Promise<{ buffer: ArrayBuffer; mimeType: string }> {
   if (params.acceleration === "webgpu" && !detectWebGPU()) {
     throw new Error("WebGPU is not supported in this environment");
@@ -53,11 +77,18 @@ export async function generateVoice(params: {
 
   const ort = await getOnnxRuntime();
 
+  const preset =
+    prosodyPresetsMap[params.prosodyPreset ?? "expressive"];
+
   const tokensPerChunk = MODEL_CONTEXT_WINDOW - 2;
   const chunks: TextProcessorChunk[] = await preprocessText(
     params.text,
     params.lang,
     tokensPerChunk,
+    {
+      silenceMultiplier: preset.silenceMultiplier,
+      sentenceVariation: preset.sentenceVariation,
+    },
   );
 
   const modelBuffer = await getModel(params.model);
@@ -68,7 +99,8 @@ export async function generateVoice(params: {
     executionProviders: [params.acceleration],
   });
 
-  const waveforms: Float32Array[] = [];
+  const waveforms: Float32Array<ArrayBuffer>[] = [];
+  const waveformIsText: boolean[] = [];
   let waveformsLen = 0;
 
   // Track speed overrides from inline [speed:X] / [fast] / [slow] markers.
@@ -87,6 +119,7 @@ export async function generateVoice(params: {
       const silenceLength = Math.floor(chunk.durationSeconds * SAMPLE_RATE);
       const silenceWave = new Float32Array(silenceLength);
       waveforms.push(silenceWave);
+      waveformIsText.push(false);
       waveformsLen += silenceLength;
     }
 
@@ -125,7 +158,8 @@ export async function generateVoice(params: {
       let waveform = (await result.waveform.getData()) as Float32Array;
       waveform = trimWaveform(waveform);
 
-      waveforms.push(waveform);
+      waveforms.push(waveform as Float32Array<ArrayBuffer>);
+      waveformIsText.push(true);
       waveformsLen += waveform.length;
     }
   }
@@ -134,11 +168,20 @@ export async function generateVoice(params: {
     throw new Error("No waveforms generated");
   }
 
-  const finalWaveform = new Float32Array(waveformsLen);
-  let offset = 0;
-  for (const waveform of waveforms) {
-    finalWaveform.set(waveform, offset);
-    offset += waveform.length;
+  // Assemble waveforms, applying a short crossfade between adjacent text chunks
+  // to prevent audible clicks at speed-change boundaries.
+  let finalWaveform = waveforms[0];
+  for (let i = 1; i < waveforms.length; i++) {
+    if (waveformIsText[i - 1] && waveformIsText[i]) {
+      finalWaveform = crossfade(finalWaveform, waveforms[i], CROSSFADE_SAMPLES);
+    } else {
+      const combined = new Float32Array(
+        finalWaveform.length + waveforms[i].length,
+      );
+      combined.set(finalWaveform);
+      combined.set(waveforms[i], finalWaveform.length);
+      finalWaveform = combined;
+    }
   }
 
   let wavBuffer = await createWavBuffer(finalWaveform, SAMPLE_RATE);

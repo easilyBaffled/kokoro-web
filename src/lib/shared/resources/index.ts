@@ -6,6 +6,7 @@ export * from "./models";
 export * from "./voices";
 export * from "./langs";
 export * from "./quotes";
+export * from "./prosodyPresets";
 
 const downloadUrl =
   "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231";
