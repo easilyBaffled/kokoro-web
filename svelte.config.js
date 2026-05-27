@@ -14,6 +14,10 @@ if (process.env.ADAPTER === "static") {
   });
 }
 
+// Allow overriding the base path for deployments like GitHub Pages
+// e.g. VITE_BASE_PATH=/kokoro-web
+const base = process.env.VITE_BASE_PATH ?? "";
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   // Consult https://svelte.dev/docs/kit/integrations
@@ -23,6 +27,10 @@ const config = {
   kit: {
     // See https://svelte.dev/docs/kit/adapters for more information about adapters.
     adapter: adapter,
+
+    paths: {
+      base,
+    },
 
     // See https://svelte.dev/docs/kit/configuration#env
     env: {
