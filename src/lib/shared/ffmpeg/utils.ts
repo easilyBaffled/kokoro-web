@@ -35,3 +35,25 @@ export function buildAtempoChain(velocity: number): string {
 
   return factors.map((f) => `atempo=${f}`).join(",");
 }
+
+/**
+ * Builds an FFmpeg filter string that shifts pitch by `semitones` without
+ * changing duration.  The technique is:
+ *   1. asetrate — retag the sample rate (tricks the decoder into hearing a pitch change)
+ *   2. atempo   — compensate tempo so the total duration stays the same
+ *
+ * For ±6 semitones the atempo factor stays within [0.707, 1.414], well inside
+ * FFmpeg's [0.5, 2.0] limit, so no chain is needed.
+ *
+ * @param semitones - Pitch shift in semitones (negative = lower, positive = higher).
+ * @param sampleRate - Original sample rate in Hz (e.g. 24000).
+ */
+export function buildPitchShiftFilter(
+  semitones: number,
+  sampleRate: number,
+): string {
+  const factor = Math.pow(2, semitones / 12);
+  const newRate = Math.round(sampleRate * factor);
+  const atempo = 1 / factor;
+  return `asetrate=${newRate},atempo=${atempo}`;
+}

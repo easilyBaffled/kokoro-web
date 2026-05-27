@@ -7,8 +7,10 @@ import {
   voicesIds,
   modelsIds,
   voicesMap,
+  prosodyPresetIds,
   type VoiceId,
   type ModelId,
+  type ProsodyPresetId,
 } from "$lib/shared/resources";
 import { authenticate } from "$lib/server/authenticate";
 
@@ -138,6 +140,11 @@ const schema = zod.object({
   input: zod.string(),
   response_format: zod.enum(["mp3", "wav"]).default("mp3").optional(),
   speed: zod.number().min(0.25).max(5).default(1).optional(),
+  prosody_preset: zod
+    .enum(prosodyPresetIds as [ProsodyPresetId, ...ProsodyPresetId[]])
+    .default("expressive")
+    .optional(),
+  pitch_shift: zod.number().min(-6).max(6).default(0).optional(),
 });
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -156,7 +163,8 @@ export const POST: RequestHandler = async ({ request }) => {
     );
   }
 
-  const { model, input, voice, speed, response_format } = parsed.data;
+  const { model, input, voice, speed, response_format, prosody_preset, pitch_shift } =
+    parsed.data;
 
   // Find the language of the first voice of the formula
   const voices = parseVoiceFormula(voice);
@@ -173,6 +181,8 @@ export const POST: RequestHandler = async ({ request }) => {
       speed: speed ?? 1,
       format: response_format ?? "mp3",
       acceleration: "cpu",
+      prosodyPreset: prosody_preset,
+      pitchShift: pitch_shift,
     });
 
     return new Response(result.buffer, {

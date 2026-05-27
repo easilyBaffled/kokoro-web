@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { detectWebGPU } from "$lib/client/utils";
-  import { langs, models } from "$lib/shared/resources";
+  import { langs, models, prosodyPresetsMap, prosodyPresetIds } from "$lib/shared/resources";
   import SelectControl from "$lib/client/components/SelectControl.svelte";
   import TextareaControl from "$lib/client/components/TextareaControl.svelte";
   import RangeControl from "$lib/client/components/RangeControl.svelte";
@@ -92,7 +92,7 @@
   <TextareaControl
     bind:value={profile.text}
     title="Text to process"
-    helpText="You can add synthetic pauses by adding a silence tags measured in seconds. E.g. Hello[1s]Kokoro[0.2s]Web"
+    helpText="Add pauses: [1s] or [0.5s]. Control phrasing: [fast], [slow], [speed:0.8]. Example: Hello[0.5s][slow]world"
     textareaClass="w-full"
   />
 
@@ -106,6 +106,28 @@
       max="2"
       step="0.1"
     />
+
+    <RangeControl
+      bind:value={profile.pitchShift}
+      hideValue={true}
+      title={`Pitch ${profile.pitchShift > 0 ? "+" : ""}${profile.pitchShift} semitones`}
+      inputClass="w-full max-w-[400px]"
+      min="-3"
+      max="3"
+      step="1"
+    />
+
+    <SelectControl
+      bind:value={profile.prosodyPreset}
+      title="Style"
+      selectClass="w-full"
+    >
+      {#each prosodyPresetIds as presetId}
+        <option value={presetId} title={prosodyPresetsMap[presetId].description}>
+          {prosodyPresetsMap[presetId].name}
+        </option>
+      {/each}
+    </SelectControl>
 
     <GenerateButton {loading} onclick={() => process()} />
   </div>

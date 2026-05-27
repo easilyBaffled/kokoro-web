@@ -28,6 +28,8 @@ export async function generate(profile: ProfileData): Promise<string> {
       speed: profile.speed,
       format: profile.format,
       acceleration: profile.acceleration,
+      prosodyPreset: profile.prosodyPreset,
+      pitchShift: profile.pitchShift,
     });
 
     const resBlob = new Blob([result.buffer], { type: result.mimeType });
