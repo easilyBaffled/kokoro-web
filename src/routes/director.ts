@@ -8,6 +8,10 @@ export interface DirectorResult {
   summary: string;
 }
 
+export function isChromeAIAvailable(): boolean {
+  return typeof window !== "undefined" && !!(window as any).ai?.languageModel;
+}
+
 const SYSTEM_PROMPT = `You are a voice direction assistant for a text-to-speech system. Given a performance direction and the text to read, output settings that make the TTS match the intended emotion and style.
 
 Available controls:
@@ -37,57 +41,51 @@ Response schema:
 export async function applyDirection(
   text: string,
   direction: string,
-  apiKey: string,
 ): Promise<DirectorResult> {
-  // Send up to 3000 chars for annotation; longer texts get global settings only.
-  const truncated = text.length > 3000;
-  const preview = truncated ? text.slice(0, 3000) + "\n\n[...continues...]" : text;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Direction: ${direction}\n\nText:\n${preview}`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
+  const ai = (window as any).ai;
+  if (!ai?.languageModel) {
     throw new Error(
-      (err as any).error?.message ?? `Anthropic API error ${response.status}`,
+      "Chrome AI not detected. Enable the Prompt API at chrome://flags/#prompt-api-for-gemini-nano and relaunch Chrome.",
     );
   }
 
-  const data = await response.json();
-  const content: string = (data as any).content?.[0]?.text ?? "";
-
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Director returned an unreadable response");
-
-  const result = JSON.parse(jsonMatch[0]) as DirectorResult;
-
-  // Clamp values to valid ranges
-  result.speed = Math.max(0.5, Math.min(2.0, result.speed ?? 1.0));
-  result.pitchShift = Math.max(-3, Math.min(3, Math.round(result.pitchShift ?? 0)));
-
-  // If text was truncated, keep the full original (only global settings apply)
-  if (truncated) {
-    result.annotatedText = text;
-    result.summary += " (text too long to annotate — global settings applied)";
+  const capabilities = await ai.languageModel.capabilities();
+  if (capabilities.available === "no") {
+    throw new Error(
+      "Gemini Nano is not yet downloaded. Visit chrome://on-device-ai or wait for Chrome to download it in the background.",
+    );
   }
 
-  return result;
+  const truncated = text.length > 3000;
+  const preview = truncated
+    ? text.slice(0, 3000) + "\n\n[...continues...]"
+    : text;
+
+  const session = await ai.languageModel.create({ systemPrompt: SYSTEM_PROMPT });
+
+  try {
+    const response = await session.prompt(
+      `Direction: ${direction}\n\nText:\n${preview}`,
+    );
+
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Director returned an unreadable response");
+
+    const result = JSON.parse(jsonMatch[0]) as DirectorResult;
+
+    result.speed = Math.max(0.5, Math.min(2.0, result.speed ?? 1.0));
+    result.pitchShift = Math.max(
+      -3,
+      Math.min(3, Math.round(result.pitchShift ?? 0)),
+    );
+
+    if (truncated) {
+      result.annotatedText = text;
+      result.summary += " (text too long to annotate — global settings applied)";
+    }
+
+    return result;
+  } finally {
+    session.destroy();
+  }
 }

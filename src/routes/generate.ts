@@ -32,12 +32,8 @@ export async function generate(profile: ProfileData): Promise<GenerateResult> {
   let pitchShift = profile.pitchShift;
   let directorSummary: string | undefined;
 
-  if (profile.directionText.trim() && profile.anthropicApiKey.trim()) {
-    const directed = await applyDirection(
-      profile.text,
-      profile.directionText,
-      profile.anthropicApiKey,
-    );
+  if (profile.directionText.trim()) {
+    const directed = await applyDirection(profile.text, profile.directionText);
     text = directed.annotatedText;
     speed = directed.speed;
     prosodyPreset = directed.prosodyPreset;
