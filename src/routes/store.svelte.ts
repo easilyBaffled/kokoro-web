@@ -24,6 +24,8 @@ export interface ProfileData {
   apiKey: string;
   prosodyPreset: ProsodyPresetId;
   pitchShift: number;
+  directionText: string;
+  anthropicApiKey: string;
 }
 
 function getCurrentHost() {
@@ -46,6 +48,8 @@ export const defaultProfile: ProfileData = {
   apiKey: "",
   prosodyPreset: "expressive",
   pitchShift: 0,
+  directionText: "",
+  anthropicApiKey: "",
 };
 
 export const profile: ProfileData = $state({
