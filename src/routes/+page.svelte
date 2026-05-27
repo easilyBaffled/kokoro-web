@@ -22,13 +22,20 @@
 
   let loading = $state(false);
   let voiceUrl = $state("");
+  let directorSummary = $state("");
+
   const process = async () => {
     if (loading) return;
     if (!profile.text) return;
 
     loading = true;
+    directorSummary = "";
     try {
-      voiceUrl = await generate(profile);
+      const result = await generate(profile);
+      voiceUrl = result.url;
+      if (result.directorSummary) {
+        directorSummary = result.directorSummary;
+      }
       toaster.success("Audio generated successfully");
     } catch (error) {
       console.error(error);
@@ -128,9 +135,30 @@
         </option>
       {/each}
     </SelectControl>
-
-    <GenerateButton {loading} onclick={() => process()} />
   </div>
+
+  <div class="fieldset w-full">
+    <legend class="fieldset-legend">AI Director <span class="font-normal opacity-60">(optional)</span></legend>
+    <div class="space-y-2">
+      <input
+        type="password"
+        class="input input-sm w-full"
+        placeholder="Anthropic API key (sk-ant-…)"
+        bind:value={profile.anthropicApiKey}
+      />
+      <textarea
+        class="textarea w-full"
+        rows="2"
+        placeholder="Direction — e.g. 'Read this as a tense thriller scene' or 'Gentle bedtime story for children'"
+        bind:value={profile.directionText}
+      ></textarea>
+      {#if directorSummary}
+        <p class="text-sm opacity-70 italic">{directorSummary}</p>
+      {/if}
+    </div>
+  </div>
+
+  <GenerateButton {loading} onclick={() => process()} />
 
   {#if voiceUrl !== ""}
     <div class="space-y-4 pt-2">

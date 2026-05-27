@@ -173,19 +173,36 @@ export async function generateVoice(params: {
     throw new Error("No waveforms generated");
   }
 
-  // Assemble waveforms, applying a short crossfade between adjacent text chunks
-  // to prevent audible clicks at speed-change boundaries.
-  let finalWaveform = waveforms[0];
+  // Pre-compute crossfade overlaps so we can allocate the output once (O(n) instead of O(n²)).
+  const overlaps: number[] = [0];
+  let totalLen = waveforms[0].length;
   for (let i = 1; i < waveforms.length; i++) {
-    if (waveformIsText[i - 1] && waveformIsText[i]) {
-      finalWaveform = crossfade(finalWaveform, waveforms[i], CROSSFADE_SAMPLES);
+    const overlap =
+      waveformIsText[i - 1] && waveformIsText[i]
+        ? Math.min(CROSSFADE_SAMPLES, waveforms[i - 1].length, waveforms[i].length)
+        : 0;
+    overlaps.push(overlap);
+    totalLen += waveforms[i].length - overlap;
+  }
+
+  // Assemble into a single pre-allocated buffer, blending at text-text boundaries.
+  const finalWaveform = new Float32Array(totalLen);
+  finalWaveform.set(waveforms[0]);
+  let writePos = waveforms[0].length;
+  for (let i = 1; i < waveforms.length; i++) {
+    const b = waveforms[i];
+    const overlap = overlaps[i];
+    if (overlap > 0) {
+      for (let j = 0; j < overlap; j++) {
+        const t = j / overlap;
+        finalWaveform[writePos - overlap + j] =
+          finalWaveform[writePos - overlap + j] * (1 - t) + b[j] * t;
+      }
+      finalWaveform.set(b.subarray(overlap), writePos);
+      writePos += b.length - overlap;
     } else {
-      const combined = new Float32Array(
-        finalWaveform.length + waveforms[i].length,
-      );
-      combined.set(finalWaveform);
-      combined.set(waveforms[i], finalWaveform.length);
-      finalWaveform = combined;
+      finalWaveform.set(b, writePos);
+      writePos += b.length;
     }
   }
 
