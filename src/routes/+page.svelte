@@ -144,26 +144,25 @@
     <legend class="fieldset-legend">
       AI Director
       <span class="font-normal opacity-60">(optional)</span>
+      <span class="ml-2 text-xs opacity-50">{chromeAIAvailable ? "Gemini Nano" : "keyword rules"}</span>
     </legend>
-    {#if chromeAIAvailable}
-      <div class="space-y-2">
-        <textarea
-          class="textarea w-full"
-          rows="2"
-          placeholder="Direction — e.g. 'Read this as a tense thriller scene' or 'Gentle bedtime story for children'"
-          bind:value={profile.directionText}
-        ></textarea>
-        {#if directorSummary}
-          <p class="text-sm opacity-70 italic">{directorSummary}</p>
-        {/if}
-      </div>
-    {:else}
-      <p class="text-sm opacity-60">
-        Requires Chrome with the on-device Prompt API enabled.
-        Go to <code>chrome://flags/#prompt-api-for-gemini-nano</code>, set it to
-        <strong>Enabled</strong>, then relaunch Chrome.
-      </p>
-    {/if}
+    <div class="space-y-2">
+      <textarea
+        class="textarea w-full"
+        rows="2"
+        placeholder="Direction — e.g. 'Read this as a tense thriller scene' or 'Gentle bedtime story for children'"
+        bind:value={profile.directionText}
+      ></textarea>
+      {#if !chromeAIAvailable}
+        <p class="text-xs opacity-50">
+          For smarter direction, enable Gemini Nano in Chrome:
+          <code>chrome://flags/#prompt-api-for-gemini-nano</code>
+        </p>
+      {/if}
+      {#if directorSummary}
+        <p class="text-sm opacity-70 italic">{directorSummary}</p>
+      {/if}
+    </div>
   </div>
 
   <GenerateButton {loading} onclick={() => process()} />
