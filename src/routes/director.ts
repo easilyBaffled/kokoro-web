@@ -38,48 +38,77 @@ Response schema:
   "summary": "One sentence describing what you adjusted and why"
 }`;
 
+// Add dramatic pauses after punctuation and a [slow] prefix.
+function annotateDramatic(text: string): string {
+  return "[slow]" + text
+    .replace(/,(\s+)/g, ",[0.5s]$1")
+    .replace(/\.(\s+)/g, ".[1s]$1")
+    .replace(/!(\s+)/g, "![0.6s]$1")
+    .replace(/\?(\s+)/g, "?[0.6s]$1");
+}
+
+// Speed up and brighten for energetic delivery.
+function annotateEnergetic(text: string): string {
+  return "[fast]" + text;
+}
+
+// Slow, warm pauses for gentle/calm delivery.
+function annotateGentle(text: string): string {
+  return "[slow]" + text
+    .replace(/,(\s+)/g, ",[0.3s]$1")
+    .replace(/\.(\s+)/g, ".[0.6s]$1");
+}
+
 // Keyword rules used when Chrome AI is unavailable.
 const RULES: Array<{
   pattern: RegExp;
   preset: ProsodyPresetId;
   speed: number;
   pitch: number;
+  annotate: (t: string) => string;
   label: string;
 }> = [
   {
-    pattern: /\b(dramatic|intense|epic|villain|evil|menacing|dark|sinister|ominous|tense|thriller|horror|scary|suspense)\b/,
-    preset: "dramatic", speed: 0.9, pitch: -1,
-    label: "dramatic — slower, lower pitch, expressive pauses",
+    pattern: /dramatic|intense|epic|villain|evil|menac|dark|sinister|ominous|tense|thriller|horror|scar|suspense/,
+    preset: "dramatic", speed: 0.75, pitch: -3,
+    annotate: annotateDramatic,
+    label: "dramatic — slow, deep, heavy pauses",
   },
   {
-    pattern: /\b(gentle|soft|calm|soothing|peaceful|quiet|bedtime|children|kids|lullaby|relaxing|meditation)\b/,
-    preset: "expressive", speed: 0.85, pitch: 1,
-    label: "gentle — slower, slightly brighter, natural pacing",
+    pattern: /gentle|soft|calm|sooth|peaceful|quiet|bedtime|children|kids|lullaby|relax|meditation/,
+    preset: "expressive", speed: 0.8, pitch: 1,
+    annotate: annotateGentle,
+    label: "gentle — slow, warm, soft pauses",
   },
   {
-    pattern: /\b(excited|energetic|upbeat|lively|enthusiastic|happy|joyful|fun|playful)\b/,
-    preset: "expressive", speed: 1.15, pitch: 1,
-    label: "energetic — faster, brighter",
+    pattern: /excit|energe|upbeat|lively|enthusias|happy|joyful|fun|playful/,
+    preset: "expressive", speed: 1.4, pitch: 2,
+    annotate: annotateEnergetic,
+    label: "energetic — fast, bright",
   },
   {
-    pattern: /\b(professional|formal|news|announcement|business|clear|neutral|monotone|robot)\b/,
-    preset: "neutral", speed: 1.0, pitch: 0,
-    label: "professional — neutral pacing, flat delivery",
+    pattern: /professional|formal|news|announcement|business|clear|neutral|monotone|robot/,
+    preset: "neutral", speed: 1.05, pitch: 0,
+    annotate: (t) => t,
+    label: "professional — flat, clear delivery",
   },
   {
-    pattern: /\b(slow|deliberate|thoughtful|pensive|sad|melancholy|grief|mourning|solemn)\b/,
-    preset: "dramatic", speed: 0.8, pitch: -1,
-    label: "slow and deliberate — reduced pace, lower pitch",
+    pattern: /slow|deliberate|thoughtful|pensive|sad|melanchol|grief|mourn|solemn/,
+    preset: "dramatic", speed: 0.7, pitch: -2,
+    annotate: annotateDramatic,
+    label: "slow and mournful — very reduced pace, lower pitch",
   },
   {
-    pattern: /\b(fast|quick|urgent|rushed|hurried|nervous|anxious)\b/,
-    preset: "neutral", speed: 1.25, pitch: 0,
-    label: "fast and urgent — increased pace",
+    pattern: /fast|quick|urgent|rush|hurr|nervous|anxious/,
+    preset: "neutral", speed: 1.5, pitch: 0,
+    annotate: annotateEnergetic,
+    label: "fast and urgent — rapid pace",
   },
   {
-    pattern: /\b(heroic|confident|powerful|authoritative|inspiring|motivational|bold)\b/,
-    preset: "dramatic", speed: 0.95, pitch: -1,
-    label: "authoritative — measured pace, lower pitch",
+    pattern: /heroic|confident|powerful|authoritative|inspir|motivat|bold/,
+    preset: "dramatic", speed: 0.85, pitch: -2,
+    annotate: annotateDramatic,
+    label: "authoritative — measured, deep, commanding",
   },
 ];
 
@@ -91,7 +120,7 @@ function applyDirectionRuleBased(text: string, direction: string): DirectorResul
         prosodyPreset: rule.preset,
         speed: rule.speed,
         pitchShift: rule.pitch,
-        annotatedText: text,
+        annotatedText: rule.annotate(text),
         summary: `Applied ${rule.label}`,
       };
     }
@@ -101,7 +130,7 @@ function applyDirectionRuleBased(text: string, direction: string): DirectorResul
     speed: 1.0,
     pitchShift: 0,
     annotatedText: text,
-    summary: "No matching keywords found — using default settings",
+    summary: "No matching keywords — try words like 'dramatic', 'gentle', 'energetic', 'urgent'",
   };
 }
 
