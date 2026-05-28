@@ -38,22 +38,85 @@ Response schema:
   "summary": "One sentence describing what you adjusted and why"
 }`;
 
+// Keyword rules used when Chrome AI is unavailable.
+const RULES: Array<{
+  pattern: RegExp;
+  preset: ProsodyPresetId;
+  speed: number;
+  pitch: number;
+  label: string;
+}> = [
+  {
+    pattern: /\b(dramatic|intense|epic|villain|evil|menacing|dark|sinister|ominous|tense|thriller|horror|scary|suspense)\b/,
+    preset: "dramatic", speed: 0.9, pitch: -1,
+    label: "dramatic — slower, lower pitch, expressive pauses",
+  },
+  {
+    pattern: /\b(gentle|soft|calm|soothing|peaceful|quiet|bedtime|children|kids|lullaby|relaxing|meditation)\b/,
+    preset: "expressive", speed: 0.85, pitch: 1,
+    label: "gentle — slower, slightly brighter, natural pacing",
+  },
+  {
+    pattern: /\b(excited|energetic|upbeat|lively|enthusiastic|happy|joyful|fun|playful)\b/,
+    preset: "expressive", speed: 1.15, pitch: 1,
+    label: "energetic — faster, brighter",
+  },
+  {
+    pattern: /\b(professional|formal|news|announcement|business|clear|neutral|monotone|robot)\b/,
+    preset: "neutral", speed: 1.0, pitch: 0,
+    label: "professional — neutral pacing, flat delivery",
+  },
+  {
+    pattern: /\b(slow|deliberate|thoughtful|pensive|sad|melancholy|grief|mourning|solemn)\b/,
+    preset: "dramatic", speed: 0.8, pitch: -1,
+    label: "slow and deliberate — reduced pace, lower pitch",
+  },
+  {
+    pattern: /\b(fast|quick|urgent|rushed|hurried|nervous|anxious)\b/,
+    preset: "neutral", speed: 1.25, pitch: 0,
+    label: "fast and urgent — increased pace",
+  },
+  {
+    pattern: /\b(heroic|confident|powerful|authoritative|inspiring|motivational|bold)\b/,
+    preset: "dramatic", speed: 0.95, pitch: -1,
+    label: "authoritative — measured pace, lower pitch",
+  },
+];
+
+function applyDirectionRuleBased(text: string, direction: string): DirectorResult {
+  const d = direction.toLowerCase();
+  for (const rule of RULES) {
+    if (rule.pattern.test(d)) {
+      return {
+        prosodyPreset: rule.preset,
+        speed: rule.speed,
+        pitchShift: rule.pitch,
+        annotatedText: text,
+        summary: `Applied ${rule.label}`,
+      };
+    }
+  }
+  return {
+    prosodyPreset: "expressive",
+    speed: 1.0,
+    pitchShift: 0,
+    annotatedText: text,
+    summary: "No matching keywords found — using default settings",
+  };
+}
+
 export async function applyDirection(
   text: string,
   direction: string,
 ): Promise<DirectorResult> {
-  const ai = (window as any).ai;
-  if (!ai?.languageModel) {
-    throw new Error(
-      "Chrome AI not detected. Enable the Prompt API at chrome://flags/#prompt-api-for-gemini-nano and relaunch Chrome.",
-    );
+  if (!isChromeAIAvailable()) {
+    return applyDirectionRuleBased(text, direction);
   }
 
+  const ai = (window as any).ai;
   const capabilities = await ai.languageModel.capabilities();
   if (capabilities.available === "no") {
-    throw new Error(
-      "Gemini Nano is not yet downloaded. Visit chrome://on-device-ai or wait for Chrome to download it in the background.",
-    );
+    return applyDirectionRuleBased(text, direction);
   }
 
   const truncated = text.length > 3000;
@@ -72,12 +135,8 @@ export async function applyDirection(
     if (!jsonMatch) throw new Error("Director returned an unreadable response");
 
     const result = JSON.parse(jsonMatch[0]) as DirectorResult;
-
     result.speed = Math.max(0.5, Math.min(2.0, result.speed ?? 1.0));
-    result.pitchShift = Math.max(
-      -3,
-      Math.min(3, Math.round(result.pitchShift ?? 0)),
-    );
+    result.pitchShift = Math.max(-3, Math.min(3, Math.round(result.pitchShift ?? 0)));
 
     if (truncated) {
       result.annotatedText = text;
@@ -89,3 +148,4 @@ export async function applyDirection(
     session.destroy();
   }
 }
+
